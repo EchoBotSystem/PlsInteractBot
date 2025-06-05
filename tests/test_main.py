@@ -1,9 +1,19 @@
-import json
-import pytest
-from unittest.mock import patch, mock_open
 import hmac
-from pathlib import Path # Import Path for mocking
-from main import lambda_handler, is_valid_event, is_valid_signature, is_challenge, is_channel_chat_message, save_channel_chat_message, MESSAGE_ID_KEY, MESSAGE_TIMESTAMP_KEY, MESSAGE_SIGNATURE_KEY, MESSAGE_TYPE_KEY, get_secret
+import json
+from unittest.mock import patch
+
+from main import (
+    MESSAGE_ID_KEY,
+    MESSAGE_SIGNATURE_KEY,
+    MESSAGE_TIMESTAMP_KEY,
+    MESSAGE_TYPE_KEY,
+    is_challenge,
+    is_channel_chat_message,
+    is_valid_event,
+    is_valid_signature,
+    lambda_handler,
+    save_channel_chat_message,
+)
 
 
 def test_is_valid_event_valid():
@@ -130,11 +140,14 @@ def test_is_valid_signature_valid():
         message_timestamp = event["headers"][MESSAGE_TIMESTAMP_KEY]
         message_body = event["body"]
         secret = b"test_secret"
-        expected_signature = "sha256=" + hmac.digest(
-            secret,
-            (message_id + message_timestamp + message_body).encode("utf-8"),
-            "sha256",
-        ).hex()
+        expected_signature = (
+            "sha256="
+            + hmac.digest(
+                secret,
+                (message_id + message_timestamp + message_body).encode("utf-8"),
+                "sha256",
+            ).hex()
+        )
         event["headers"][MESSAGE_SIGNATURE_KEY] = expected_signature
         # Act
         result = is_valid_signature(event)
@@ -197,21 +210,19 @@ def test_is_channel_chat_message_valid():
         "headers": {
             MESSAGE_TYPE_KEY: "notification",
         },
-        "body": json.dumps({
-            "subscription": {
-                "type": "channel.chat.message",
-                "condition": {
-                    "broadcaster_user_id": "123"
-                }
+        "body": json.dumps(
+            {
+                "subscription": {
+                    "type": "channel.chat.message",
+                    "condition": {"broadcaster_user_id": "123"},
+                },
+                "event": {
+                    "message_id": "456",
+                    "chatter_user_id": "789",
+                    "message": {"text": "Hello"},
+                },
             },
-            "event": {
-                "message_id": "456",
-                "chatter_user_id": "789",
-                "message": {
-                    "text": "Hello"
-                }
-            }
-        })
+        ),
     }
 
     # Act
@@ -227,21 +238,19 @@ def test_is_channel_chat_message_invalid_type():
         "headers": {
             MESSAGE_TYPE_KEY: "webhook_callback_verification",
         },
-        "body": json.dumps({
-            "subscription": {
-                "type": "channel.chat.message",
-                "condition": {
-                    "broadcaster_user_id": "123"
-                }
+        "body": json.dumps(
+            {
+                "subscription": {
+                    "type": "channel.chat.message",
+                    "condition": {"broadcaster_user_id": "123"},
+                },
+                "event": {
+                    "message_id": "456",
+                    "chatter_user_id": "789",
+                    "message": {"text": "Hello"},
+                },
             },
-            "event": {
-                "message_id": "456",
-                "chatter_user_id": "789",
-                "message": {
-                    "text": "Hello"
-                }
-            }
-        })
+        ),
     }
 
     # Act
@@ -272,7 +281,7 @@ def test_is_channel_chat_message_invalid_json_body():
         "headers": {
             MESSAGE_TYPE_KEY: "notification",
         },
-        "body": "this is not json"
+        "body": "this is not json",
     }
 
     # Act
@@ -288,17 +297,17 @@ def test_is_channel_chat_message_invalid_subscription_type():
         "headers": {
             MESSAGE_TYPE_KEY: "notification",
         },
-        "body": json.dumps({
-            "subscription": {
-                "type": "channel.follow", # Incorrect type
-                "condition": {
-                    "broadcaster_user_id": "123"
-                }
+        "body": json.dumps(
+            {
+                "subscription": {
+                    "type": "channel.follow",  # Incorrect type
+                    "condition": {"broadcaster_user_id": "123"},
+                },
+                "event": {
+                    "user_id": "789",
+                },
             },
-            "event": {
-                "user_id": "789",
-            }
-        })
+        ),
     }
 
     # Act
@@ -312,23 +321,17 @@ def test_is_channel_chat_message_invalid_subscription_type():
 def test_save_channel_chat_message(mock_dynamodb_client):
     # Arrange
     event = {
-        "body": json.dumps({
-            "subscription": {
-                "condition": {
-                    "broadcaster_user_id": "123"
-                }
+        "body": json.dumps(
+            {
+                "subscription": {"condition": {"broadcaster_user_id": "123"}},
+                "event": {
+                    "message_id": "456",
+                    "chatter_user_id": "789",
+                    "message": {"text": "Hello"},
+                },
             },
-            "event": {
-                "message_id": "456",
-                "chatter_user_id": "789",
-                "message": {
-                    "text": "Hello"
-                }
-            }
-        }),
-        "requestContext": {
-            "timeEpoch": 1678886400
-        }
+        ),
+        "requestContext": {"timeEpoch": 1678886400},
     }
 
     # Act
@@ -359,9 +362,11 @@ def test_lambda_handler_valid_event_valid_signature_challenge():
         "body": json.dumps({"challenge": "test_challenge"}),
     }
     context = {}
-    with patch("main.is_valid_event", return_value=True), patch(
-        "main.is_valid_signature", return_value=True
-    ), patch("main.is_challenge", return_value=True):
+    with (
+        patch("main.is_valid_event", return_value=True),
+        patch("main.is_valid_signature", return_value=True),
+        patch("main.is_challenge", return_value=True),
+    ):
         # Act
         result = lambda_handler(event, context)
 
@@ -394,8 +399,9 @@ def test_lambda_handler_invalid_signature():
         "body": "{}",
     }
     context = {}
-    with patch("main.is_valid_event", return_value=True), patch(
-        "main.is_valid_signature", return_value=False
+    with (
+        patch("main.is_valid_event", return_value=True),
+        patch("main.is_valid_signature", return_value=False),
     ):
         # Act
         result = lambda_handler(event, context)
@@ -413,12 +419,14 @@ def test_lambda_handler_challenge_no_challenge_in_body():
             MESSAGE_SIGNATURE_KEY: "sha256=signature",
             MESSAGE_TYPE_KEY: "webhook_callback_verification",
         },
-        "body": json.dumps({}), # Missing "challenge" key
+        "body": json.dumps({}),  # Missing "challenge" key
     }
     context = {}
-    with patch("main.is_valid_event", return_value=True), patch(
-        "main.is_valid_signature", return_value=True
-    ), patch("main.is_challenge", return_value=True):
+    with (
+        patch("main.is_valid_event", return_value=True),
+        patch("main.is_valid_signature", return_value=True),
+        patch("main.is_challenge", return_value=True),
+    ):
         # Act
         result = lambda_handler(event, context)
 
@@ -437,17 +445,17 @@ def test_lambda_handler_channel_chat_message_success(mock_save_channel_chat_mess
             MESSAGE_SIGNATURE_KEY: "sha256=signature",
             MESSAGE_TYPE_KEY: "notification",
         },
-        "body": json.dumps({
-            "subscription": {"type": "channel.chat.message"},
-            "event": {"message_id": "123"}
-        }),
-        "requestContext": {"timeEpoch": 1234567890}
+        "body": json.dumps(
+            {"subscription": {"type": "channel.chat.message"}, "event": {"message_id": "123"}},
+        ),
+        "requestContext": {"timeEpoch": 1234567890},
     }
     context = {}
-    with patch("main.is_valid_event", return_value=True), patch(
-        "main.is_valid_signature", return_value=True
-    ), patch("main.is_challenge", return_value=False), patch(
-        "main.is_channel_chat_message", return_value=True
+    with (
+        patch("main.is_valid_event", return_value=True),
+        patch("main.is_valid_signature", return_value=True),
+        patch("main.is_challenge", return_value=False),
+        patch("main.is_channel_chat_message", return_value=True),
     ):
         # Act
         result = lambda_handler(event, context)
@@ -467,23 +475,23 @@ def test_lambda_handler_channel_chat_message_exception(mock_save_channel_chat_me
             MESSAGE_SIGNATURE_KEY: "sha256=signature",
             MESSAGE_TYPE_KEY: "notification",
         },
-        "body": json.dumps({
-            "subscription": {"type": "channel.chat.message"},
-            "event": {"message_id": "123"}
-        }),
-        "requestContext": {"timeEpoch": 1234567890}
+        "body": json.dumps(
+            {"subscription": {"type": "channel.chat.message"}, "event": {"message_id": "123"}},
+        ),
+        "requestContext": {"timeEpoch": 1234567890},
     }
     context = {}
-    with patch("main.is_valid_event", return_value=True), patch(
-        "main.is_valid_signature", return_value=True
-    ), patch("main.is_challenge", return_value=False), patch(
-        "main.is_channel_chat_message", return_value=True
+    with (
+        patch("main.is_valid_event", return_value=True),
+        patch("main.is_valid_signature", return_value=True),
+        patch("main.is_challenge", return_value=False),
+        patch("main.is_channel_chat_message", return_value=True),
     ):
         # Act
         result = lambda_handler(event, context)
 
         # Assert
-        assert result["statusCode"] == 200 # Still returns 200 to prevent retries
+        assert result["statusCode"] == 200  # Still returns 200 to prevent retries
         mock_save_channel_chat_message.assert_called_once_with(event)
 
 
@@ -494,20 +502,19 @@ def test_lambda_handler_other_valid_event():
             MESSAGE_ID_KEY: "id",
             MESSAGE_TIMESTAMP_KEY: "timestamp",
             MESSAGE_SIGNATURE_KEY: "sha256=signature",
-            MESSAGE_TYPE_KEY: "channel.follow", # Some other valid type
+            MESSAGE_TYPE_KEY: "channel.follow",  # Some other valid type
         },
         "body": json.dumps({"event_data": "some_data"}),
     }
     context = {}
-    with patch("main.is_valid_event", return_value=True), patch(
-        "main.is_valid_signature", return_value=True
-    ), patch("main.is_challenge", return_value=False), patch(
-        "main.is_channel_chat_message", return_value=False
+    with (
+        patch("main.is_valid_event", return_value=True),
+        patch("main.is_valid_signature", return_value=True),
+        patch("main.is_challenge", return_value=False),
+        patch("main.is_channel_chat_message", return_value=False),
     ):
         # Act
         result = lambda_handler(event, context)
 
         # Assert
         assert result["statusCode"] == 200
-
-

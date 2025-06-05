@@ -75,7 +75,7 @@ def lambda_handler(event: dict, context: dict) -> dict:
             # if the event was successfully processed up to this point.
             print(f"Error saving channel chat message: {e}")
             return {"statusCode": 200}
-    
+
     # For any other valid event type, return 200 OK.
     return {"statusCode": 200}
 
@@ -86,7 +86,7 @@ def is_valid_event(event: dict) -> bool:
     expected from a Twitch EventSub notification.
     """
     headers = event.get("headers", {})  # Use .get() for safer access
-    
+
     # Check for the presence of required Twitch EventSub headers.
     if MESSAGE_ID_KEY not in headers:
         print("Missing message ID in headers")
@@ -100,7 +100,7 @@ def is_valid_event(event: dict) -> bool:
     if MESSAGE_TYPE_KEY not in headers:
         print("Missing message type in headers")
         return False
-    
+
     # Check for the presence of the request body.
     if "body" not in event:
         print("Missing body in event")
@@ -156,17 +156,17 @@ def is_channel_chat_message(event: dict) -> bool:
     notification.
     """
     headers = event["headers"]
-    
+
     # Check message type is 'notification'.
     if headers.get(MESSAGE_TYPE_KEY) != "notification":
         print("Message type is not notification for being an channel chat message")
         return False
-    
+
     # Parse the body to check subscription type.
     if "body" not in event:
         print("Missing body in event for being an channel chat message")
         return False
-    
+
     try:
         body = json.loads(event["body"])
     except json.JSONDecodeError:
@@ -189,20 +189,20 @@ def save_channel_chat_message(event: dict) -> None:
     and saves it to a DynamoDB table named 'comments'.
     """
     body = json.loads(event["body"])
-    
+
     # Extract data points from the event body.
     message_id = body["event"]["message_id"]
     chatter_user_id = body["event"]["chatter_user_id"]
     broadcaster_user_id = body["subscription"]["condition"]["broadcaster_user_id"]
     message_content = body["event"]["message"]["text"]
-    
+
     # Get the reception time from the Lambda request context.
     # This is typically a Unix epoch timestamp.
     reception_unixtime = str(event["requestContext"]["timeEpoch"])
 
     # Initialize a DynamoDB client.
     dynamodb = boto3.client("dynamodb")
-    
+
     # Put the item into the 'comments' DynamoDB table.
     # Each attribute needs to specify its type (e.g., "S" for String, "N" for Number).
     dynamodb.put_item(
@@ -215,4 +215,3 @@ def save_channel_chat_message(event: dict) -> None:
             "reception_unixtime": {"N": reception_unixtime},
         },
     )
-
