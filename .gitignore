@@ -136,6 +136,9 @@ ENV/
 env.bak/
 venv.bak/
 
+# Secrets
+secret.txt
+
 # Spyder project settings
 .spyderproject
 .spyproject
@@ -176,5 +179,5 @@ cython_debug/
 # Aider
 .aider*
 
-# VisualStudioCode #
+# VisualStudioCode
 .vscode/*
