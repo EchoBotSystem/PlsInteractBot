@@ -1,0 +1,60 @@
+[project]
+name = "plsinteractbot"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+license = "MIT"
+license-file = "LICENSE"
+authors = [
+    { name = "Antonio Fortich", email = "antonio@fortich.dev" },
+    { name = "Juan Sebastian Peña", email = "jspenaq@unal.edu.co" }
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+requires-python = ">=3.12"
+dependencies = [
+    "boto3>=1.38.30",
+]
+
+[dependency-groups]
+dev = [
+    "coverage>=7.8.2",
+    "mypy>=1.16.0",
+    "pytest>=8.3.5",
+    "pytest-asyncio>=1.0.0",
+    "ruff>=0.11.12",
+]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle
+    "F",  # Pyflakes
+    "I",  # isort
+    "N",  # pep8-naming
+    "Q",  # flake8-quotes
+    "S",  # flake8-bandit
+    "B",  # flake8-bugbear
+    "UP",  # pyupgrade
+    "TC",  # flake8-type-checking
+    "TD",  # flake8-todos
+    "C4",  # flake8-comprehensions
+    "ISC", # flake8-implicit-str-concat
+    "ANN",  # flake8-annotations
+    "SIM",  # flake8-simplify
+    "RET",  # flake8-return
+    "COM",  # flake8-commas
+    "ICN",  # flake8-import-conventions
+    "TID",  # flake8-tidy-imports
+    "PTH",  # flake8-use-pathlib
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "ANN001", "ANN201", "ANN202", "E402", "E501", "E711"]
