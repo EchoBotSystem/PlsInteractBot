@@ -1,10 +1,16 @@
 import time
+import json
 from collections import Counter
 
 import boto3
 from boto3 import Session
 
 
+# Initialize a DynamoDB client.
+apig_management = None
+comments_table_name = "comments"
+rankings_table_name = "rankings"
+dynamodb: Session = boto3.client("dynamodb")
 def lambda_handler(event: dict, context: dict) -> dict:
     """
     The main entry point for the AWS Lambda function.
@@ -20,11 +26,26 @@ def lambda_handler(event: dict, context: dict) -> dict:
         dict: A dictionary representing the HTTP response, indicating success or failure.
     """
     print("Rankings processor started.")
+    global apig_management
+    connection_id = event['requestContext']['connectionId']
+    route_key = event['requestContext']['routeKey']
 
-    # Initialize a DynamoDB client.
-    dynamodb: Session = boto3.client("dynamodb")
-    comments_table_name = "comments"
-    rankings_table_name = "rankings"
+    if not apig_management:
+        endpoint = f"https://{event['requestContext']['domainName']}/{event['requestContext']['stage']}"
+        apig_management = boto3.client('apigatewaymanagementapi', endpoint_url=endpoint)
+    print("event: %s", event)
+    if route_key == '$connect':
+        return {'statusCode': 200}
+    elif route_key == 'getRanking':
+        print("Enter in route getRanking")
+        return get_ranking(connection_id,event)
+    elif route_key == '$disconnect':
+        return {'statusCode': 200}
+
+    
+
+
+def get_ranking(connection_id: dict, event:dict):
 
     # Determine the time window for processing.
     # 'end_unixtime' can be provided in the event; otherwise, it defaults to the current time.
@@ -84,6 +105,7 @@ def lambda_handler(event: dict, context: dict) -> dict:
 
     # Format the top chatters data for storage in DynamoDB's List ('L') type.
     top_chatters_formatted = []
+    top_chatters_response = []
     for user_id, count in top_chatters:
         top_chatters_formatted.append(
             {
@@ -93,7 +115,12 @@ def lambda_handler(event: dict, context: dict) -> dict:
                 },
             },
         )
-
+        top_chatters_response.append(
+            {
+            "userId": user_id,
+            "messageCount": count
+            },
+        ) #response for API socket
     try:
         # Store the calculated rankings in the 'rankings' DynamoDB table.
         # The 'ranking_type' serves as the partition key.
@@ -114,5 +141,9 @@ def lambda_handler(event: dict, context: dict) -> dict:
         # Log any errors encountered during the write operation.
         print(f"Error writing to rankings table: {e}")
         return {"statusCode": 500, "body": f"Error writing rankings: {e}"}
-
+    message = {'type': 'ranking','data': {"topChatters": top_chatters_response}}
+    apig_management.post_to_connection(
+        Data=json.dumps(message).encode('utf-8'),
+        ConnectionId=connection_id
+    )
     return {"statusCode": 200, "body": "Rankings processed successfully."}
