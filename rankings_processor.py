@@ -27,35 +27,45 @@ def lambda_handler(event: dict, context: dict) -> dict:
     """
     print("Rankings processor started.")
     global apig_management
-    if "requestContext" in event:
-        connection_id = event["requestContext"]["connectionId"]
+
+    connection_id = None  # Initialize connection_id to None by default
+
+    # Check if the event is from API Gateway (WebSocket)
+    if "requestContext" in event and "connectionId" in event["requestContext"]:
+        connection_id = event["requestContext"]["connectionId"]  # This is the string connection ID
         route_key = event["requestContext"]["routeKey"]
 
         if not apig_management:
             endpoint = f"https://{event['requestContext']['domainName']}/{event['requestContext']['stage']}"
             apig_management = boto3.client("apigatewaymanagementapi", endpoint_url=endpoint)
-        print("event: %s", event)
+        print(f"event: {event}")  # Use f-string for better logging
         if route_key == "$connect":
             return {"statusCode": 200}
-        if route_key == "getRanking":
+        if route_key == "getRanking":  # Use elif for clarity and efficiency
             print("Enter in route getRanking")
-            return get_ranking(connection_id, event)
-        if route_key == "$disconnect":
+            # Pass event first, then connection_id
+            return get_ranking(event, connection_id)
+        if route_key == "$disconnect":  # Use elif
             return {"statusCode": 200}
+        # Handle unknown WebSocket route keys
+        print(f"Unknown route key: {route_key}")
+        return {"statusCode": 400, "body": f"Unknown route key: {route_key}"}
 
     # Assume it's a direct invocation for ranking processing
     print("Direct invocation for ranking processing.")
-    return get_ranking(None, event)
+    # For direct invocation, connection_id remains None
+    return get_ranking(event, connection_id)
 
 
-def get_ranking(connection_id: dict, event: dict) -> dict:
+def get_ranking(event: dict, connection_id: str = None) -> dict:
     """
     Retrieves and processes chat messages from the 'comments' DynamoDB table,
     aggregates chatter activity, and stores the top chatters in the 'rankings' table.
     Args:
-        connection_id (dict): The connection ID for the API Gateway management API, if applicable.
         event (dict): The event dictionary, potentially containing 'end_unixtime'
                       to specify the end of the processing window.
+        connection_id (str, optional): The connection ID for the API Gateway management API, if applicable.
+                                       Defaults to None for direct invocations.
     Returns:
         dict: A dictionary representing the HTTP response, indicating success or failure.
     """
@@ -104,6 +114,13 @@ def get_ranking(connection_id: dict, event: dict) -> dict:
 
     if not all_messages:
         print("No new messages found in the specified time window to process for rankings.")
+        # If a connection_id is provided, send a message back to the client
+        if connection_id:
+            message = {"type": "ranking", "data": {"topChatters": []}}
+            apig_management.post_to_connection(
+                Data=json.dumps(message).encode("utf-8"),
+                ConnectionId=connection_id,
+            )
         return {"statusCode": 200, "body": "No new messages to process."}
 
     # Aggregate message counts per chatter using collections.Counter.
@@ -156,9 +173,17 @@ def get_ranking(connection_id: dict, event: dict) -> dict:
     except Exception as e:
         # Log any errors encountered during the write operation.
         print(f"Error writing to rankings table: {e}")
+        # If a connection_id is provided, send an error message back to the client
+        if connection_id:
+            apig_management.post_to_connection(
+                Data=json.dumps({"type": "error", "message": f"Error writing rankings: {e}"}).encode("utf-8"),
+                ConnectionId=connection_id,
+            )
         return {"statusCode": 500, "body": f"Error writing rankings: {e}"}
-    message = {"type": "ranking", "data": {"topChatters": top_chatters_response}}
+
+    # Only post to connection if a connection_id is provided (i.e., it's a WebSocket request)
     if connection_id:
+        message = {"type": "ranking", "data": {"topChatters": top_chatters_response}}
         apig_management.post_to_connection(
             Data=json.dumps(message).encode("utf-8"),
             ConnectionId=connection_id,

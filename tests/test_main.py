@@ -491,7 +491,7 @@ def test_lambda_handler_channel_chat_message_exception(mock_save_channel_chat_me
         result = lambda_handler(event, context)
 
         # Assert
-        assert result["statusCode"] == 200  # Still returns 200 to prevent retries
+        assert result["statusCode"] == 200
         mock_save_channel_chat_message.assert_called_once_with(event)
 
 
@@ -502,7 +502,7 @@ def test_lambda_handler_other_valid_event():
             MESSAGE_ID_KEY: "id",
             MESSAGE_TIMESTAMP_KEY: "timestamp",
             MESSAGE_SIGNATURE_KEY: "sha256=signature",
-            MESSAGE_TYPE_KEY: "channel.follow",  # Some other valid type
+            MESSAGE_TYPE_KEY: "channel.follow",
         },
         "body": json.dumps({"event_data": "some_data"}),
     }
