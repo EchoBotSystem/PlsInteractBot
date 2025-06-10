@@ -1,6 +1,5 @@
 import time
-import unittest.mock
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from rankings_processor import lambda_handler
 
@@ -9,8 +8,8 @@ def test_lambda_handler_success():
     # Arrange
     event = {"end_unixtime": int(time.time() * 1000)}
     context = {}
-    mock_dynamodb_client = unittest.mock.Mock()
-    with patch("rankings_processor.boto3.client", return_value=mock_dynamodb_client):
+    mock_dynamodb_client = Mock()
+    with patch("rankings_processor.dynamodb", new=mock_dynamodb_client):
         mock_dynamodb_client.scan.return_value = {
             "Items": [
                 {"chatter_user_id": {"S": "user1"}, "reception_unixtime": {"N": str(event["end_unixtime"] - 1000)}},
@@ -37,8 +36,8 @@ def test_lambda_handler_no_new_messages():
     # Arrange
     event = {"end_unixtime": int(time.time() * 1000)}
     context = {}
-    mock_dynamodb_client = unittest.mock.Mock()
-    with patch("rankings_processor.boto3.client", return_value=mock_dynamodb_client):
+    mock_dynamodb_client = Mock()
+    with patch("rankings_processor.dynamodb", new=mock_dynamodb_client):
         mock_dynamodb_client.scan.return_value = {"Items": []}
 
         # Act
@@ -54,8 +53,8 @@ def test_lambda_handler_dynamodb_write_error():
     # Arrange
     event = {"end_unixtime": int(time.time() * 1000)}
     context = {}
-    mock_dynamodb_client = unittest.mock.Mock()
-    with patch("rankings_processor.boto3.client", return_value=mock_dynamodb_client):
+    mock_dynamodb_client = Mock()
+    with patch("rankings_processor.dynamodb", new=mock_dynamodb_client):
         mock_dynamodb_client.scan.return_value = {
             "Items": [
                 {"chatter_user_id": {"S": "user1"}, "reception_unixtime": {"N": str(event["end_unixtime"] - 1000)}},
@@ -75,8 +74,8 @@ def test_lambda_handler_missing_end_unixtime():
     # Arrange
     event = {}
     context = {}
-    mock_dynamodb_client = unittest.mock.Mock()
-    with patch("rankings_processor.boto3.client", return_value=mock_dynamodb_client):
+    mock_dynamodb_client = Mock()
+    with patch("rankings_processor.dynamodb", new=mock_dynamodb_client):
         mock_dynamodb_client.scan.return_value = {
             "Items": [
                 {"chatter_user_id": {"S": "user1"}, "reception_unixtime": {"N": str(int(time.time() * 1000) - 1000)}},
@@ -96,8 +95,8 @@ def test_lambda_handler_valid_and_invalid_data():
     # Arrange
     event = {"end_unixtime": int(time.time() * 1000)}
     context = {}
-    mock_dynamodb_client = unittest.mock.Mock()
-    with patch("rankings_processor.boto3.client", return_value=mock_dynamodb_client):
+    mock_dynamodb_client = Mock()
+    with patch("rankings_processor.dynamodb", new=mock_dynamodb_client):
         mock_dynamodb_client.scan.return_value = {
             "Items": [
                 {"chatter_user_id": {"S": "user1"}, "reception_unixtime": {"N": str(event["end_unixtime"] - 1000)}},

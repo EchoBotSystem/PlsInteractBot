@@ -1,16 +1,16 @@
-import time
 import json
+import time
 from collections import Counter
 
 import boto3
-from boto3 import Session
-
 
 # Initialize a DynamoDB client.
 apig_management = None
 comments_table_name = "comments"
 rankings_table_name = "rankings"
-dynamodb: Session = boto3.client("dynamodb")
+dynamodb = None
+
+
 def lambda_handler(event: dict, context: dict) -> dict:
     """
     The main entry point for the AWS Lambda function.
@@ -27,25 +27,41 @@ def lambda_handler(event: dict, context: dict) -> dict:
     """
     print("Rankings processor started.")
     global apig_management
-    connection_id = event['requestContext']['connectionId']
-    route_key = event['requestContext']['routeKey']
+    if "requestContext" in event:
+        connection_id = event["requestContext"]["connectionId"]
+        route_key = event["requestContext"]["routeKey"]
 
-    if not apig_management:
-        endpoint = f"https://{event['requestContext']['domainName']}/{event['requestContext']['stage']}"
-        apig_management = boto3.client('apigatewaymanagementapi', endpoint_url=endpoint)
-    print("event: %s", event)
-    if route_key == '$connect':
-        return {'statusCode': 200}
-    elif route_key == 'getRanking':
-        print("Enter in route getRanking")
-        return get_ranking(connection_id,event)
-    elif route_key == '$disconnect':
-        return {'statusCode': 200}
+        if not apig_management:
+            endpoint = f"https://{event['requestContext']['domainName']}/{event['requestContext']['stage']}"
+            apig_management = boto3.client("apigatewaymanagementapi", endpoint_url=endpoint)
+        print("event: %s", event)
+        if route_key == "$connect":
+            return {"statusCode": 200}
+        if route_key == "getRanking":
+            print("Enter in route getRanking")
+            return get_ranking(connection_id, event)
+        if route_key == "$disconnect":
+            return {"statusCode": 200}
 
-    
+    # Assume it's a direct invocation for ranking processing
+    print("Direct invocation for ranking processing.")
+    return get_ranking(None, event)
 
 
-def get_ranking(connection_id: dict, event:dict):
+def get_ranking(connection_id: dict, event: dict) -> dict:
+    """
+    Retrieves and processes chat messages from the 'comments' DynamoDB table,
+    aggregates chatter activity, and stores the top chatters in the 'rankings' table.
+    Args:
+        connection_id (dict): The connection ID for the API Gateway management API, if applicable.
+        event (dict): The event dictionary, potentially containing 'end_unixtime'
+                      to specify the end of the processing window.
+    Returns:
+        dict: A dictionary representing the HTTP response, indicating success or failure.
+    """
+    global dynamodb
+    if not dynamodb:
+        dynamodb = boto3.client("dynamodb")
 
     # Determine the time window for processing.
     # 'end_unixtime' can be provided in the event; otherwise, it defaults to the current time.
@@ -117,10 +133,10 @@ def get_ranking(connection_id: dict, event:dict):
         )
         top_chatters_response.append(
             {
-            "userId": user_id,
-            "messageCount": count
+                "userId": user_id,
+                "messageCount": count,
             },
-        ) #response for API socket
+        )
     try:
         # Store the calculated rankings in the 'rankings' DynamoDB table.
         # The 'ranking_type' serves as the partition key.
@@ -141,9 +157,10 @@ def get_ranking(connection_id: dict, event:dict):
         # Log any errors encountered during the write operation.
         print(f"Error writing to rankings table: {e}")
         return {"statusCode": 500, "body": f"Error writing rankings: {e}"}
-    message = {'type': 'ranking','data': {"topChatters": top_chatters_response}}
-    apig_management.post_to_connection(
-        Data=json.dumps(message).encode('utf-8'),
-        ConnectionId=connection_id
-    )
+    message = {"type": "ranking", "data": {"topChatters": top_chatters_response}}
+    if connection_id:
+        apig_management.post_to_connection(
+            Data=json.dumps(message).encode("utf-8"),
+            ConnectionId=connection_id,
+        )
     return {"statusCode": 200, "body": "Rankings processed successfully."}
