@@ -292,7 +292,7 @@ def test_lambda_handler_get_ranking_route_dynamodb_write_error(mock_boto3_client
     assert kwargs["ConnectionId"] == connection_id
     sent_data = json.loads(kwargs["Data"].decode("utf-8"))  # Access Data from kwargs
     assert sent_data["type"] == "error"
-    assert "Error writing rankings" in sent_data["message"]
+    assert "Error writing rankings" in sent_data["data"]["message"]
 
 
 def test_lambda_handler_unknown_route_key(mock_boto3_clients):

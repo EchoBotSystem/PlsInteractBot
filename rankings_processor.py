@@ -40,11 +40,11 @@ def lambda_handler(event: dict, context: dict) -> dict:
         print(f"event: {event}")  # Use f-string for better logging
         if route_key == "$connect":
             return {"statusCode": 200}
-        if route_key == "getRanking":  # Use elif for clarity and efficiency
+        elif route_key == "getRanking":
             print("Enter in route getRanking")
             # Pass event first, then connection_id
             return get_ranking(event, connection_id)
-        if route_key == "$disconnect":  # Use elif
+        elif route_key == "$disconnect":
             return {"statusCode": 200}
         # Handle unknown WebSocket route keys
         print(f"Unknown route key: {route_key}")
@@ -111,54 +111,78 @@ def get_ranking(event: dict, connection_id: str | None = None) -> dict:
 
     print(f"Found {len(all_messages)} messages in the last month seconds.")
 
+    status_code = 200
+    body_message = ""
+    response_type = "ranking"
+    response_data = {"topChatters": []}  # Default empty list
+
     if not all_messages:
         print("No new messages found in the specified time window to process for rankings.")
-        # If a connection_id is provided, send a message back to the client
-        if connection_id:
-            message = {"type": "ranking", "data": {"topChatters": []}}
+        body_message = "No new messages to process."
+        # response_data already has empty topChatters
+    else:
+        # Aggregate message counts per chatter
+        chatter_message_counts = Counter()
+        for item in all_messages:
+            chatter_user_id = item.get("chatter_user_id", {}).get("S")
+            if chatter_user_id:
+                chatter_message_counts[chatter_user_id] += 1
+
+        print(f"Aggregated chatter message counts: {chatter_message_counts}")
+
+        # Get the top 10 chatters based on message count.
+        top_chatters = chatter_message_counts.most_common(10)
+
+        # Format the top chatters data for storage in DynamoDB's List ('L') type.
+        top_chatters_formatted = []
+        top_chatters_response = []
+        for user_id, count in top_chatters:
+            top_chatters_formatted.append(
+                {
+                    "M": {  # 'M' denotes a Map type
+                        "user_id": {"S": user_id},  # 'S' denotes a String type
+                        "message_count": {"N": str(count)},  # 'N' denotes a Number type
+                    },
+                },
+            )
+            top_chatters_response.append(
+                {
+                    "userId": user_id,
+                    "messageCount": count,
+                },
+            )
+        response_data["topChatters"] = top_chatters_response  # Update response_data
+
+        try:
+            dynamodb.put_item(
+                TableName="rankings",
+                Item={
+                    "ranking_type": {"S": "chatter_activity"},
+                    "window_end_unixtime": {"N": str(end_unixtime)},
+                    "top_chatters": {"L": top_chatters_formatted},
+                },
+            )
+            print("Rankings saved successfully to DynamoDB.")
+            body_message = "Rankings processed successfully."
+        except Exception as e:
+            print(f"Error writing rankings to DynamoDB: {e}")
+            status_code = 500
+            body_message = f"Error writing rankings: {e}"
+            response_type = "error"
+            response_data = {"message": body_message}  # Update response_data for error
+
+    # Send message back to WebSocket client if connection_id is provided
+    if connection_id:
+        message = {"type": response_type, "data": response_data}
+        try:
             apig_management.post_to_connection(
                 Data=json.dumps(message).encode("utf-8"),
                 ConnectionId=connection_id,
             )
-        return {"statusCode": 200, "body": "No new messages to process."}
+        except Exception as e:
+            print(f"Error posting to connection {connection_id}: {e}")
+            # Log the error but don't change the main Lambda response status
+            # as the primary task (ranking processing/error handling) is done.
+            pass
 
-    # Aggregate message counts per chatter using collections.Counter.
-    chatter_message_counts = Counter()
-    for item in all_messages:
-        # Extract the chatter_user_id from the DynamoDB item format.
-        chatter_user_id = item.get("chatter_user_id", {}).get("S")
-        if chatter_user_id:
-            chatter_message_counts[chatter_user_id] += 1
-
-    print(f"Aggregated chatter message counts: {chatter_message_counts}")
-
-    # Get the top 10 chatters based on message count.
-    top_chatters = chatter_message_counts.most_common(10)
-
-    # Format the top chatters data for storage in DynamoDB's List ('L') type.
-    top_chatters_formatted = []
-    top_chatters_response = []
-    for user_id, count in top_chatters:
-        top_chatters_formatted.append(
-            {
-                "M": {  # 'M' denotes a Map type
-                    "user_id": {"S": user_id},  # 'S' denotes a String type
-                    "message_count": {"N": str(count)},  # 'N' denotes a Number type
-                },
-            },
-        )
-        top_chatters_response.append(
-            {
-                "userId": user_id,
-                "messageCount": count,
-            },
-        )
-
-    # Only post to connection if a connection_id is provided (i.e., it's a WebSocket request)
-    if connection_id:
-        message = {"type": "ranking", "data": {"topChatters": top_chatters_response}}
-        apig_management.post_to_connection(
-            Data=json.dumps(message).encode("utf-8"),
-            ConnectionId=connection_id,
-        )
-    return {"statusCode": 200, "body": "Rankings processed successfully."}
+    return {"statusCode": status_code, "body": body_message}
