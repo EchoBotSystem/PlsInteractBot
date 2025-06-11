@@ -311,3 +311,106 @@ def test_lambda_handler_unknown_route_key(mock_boto3_clients):
     assert result["statusCode"] == 400
     assert "Unknown route key: unknownRoute" in result["body"]
     mock_apig_management_client_fixture.post_to_connection.assert_not_called()
+
+
+def test_lambda_handler_websocket_missing_domain_or_stage(mock_boto3_clients):
+    # Arrange
+    mock_dynamodb_client_fixture, mock_apig_management_client_fixture = mock_boto3_clients
+    event = {
+        "requestContext": {
+            "connectionId": "test-connection-id",
+            "routeKey": "getRanking",
+            # Missing "domainName" and "stage"
+        },
+        "end_unixtime": int(time.time() * 1000),
+    }
+    context = {}
+
+    # Act
+    result = rankings_processor.lambda_handler(event, context)
+
+    # Assert
+    assert result["statusCode"] == 500
+    assert "Internal Server Error: WebSocket endpoint details missing." in result["body"]
+    mock_dynamodb_client_fixture.scan.assert_not_called()
+    mock_apig_management_client_fixture.post_to_connection.assert_not_called()
+
+
+def test_lambda_handler_get_ranking_route_dynamodb_scan_error(mock_boto3_clients):
+    # Arrange
+    mock_dynamodb_client_fixture, mock_apig_management_client_fixture = mock_boto3_clients
+    connection_id = "test-connection-id-scan-error"
+    event = {
+        "requestContext": {
+            "connectionId": connection_id,
+            "routeKey": "getRanking",
+            "domainName": "example.com",
+            "stage": "prod",
+        },
+        "end_unixtime": int(time.time() * 1000),
+    }
+    context = {}
+    mock_dynamodb_client_fixture.scan.side_effect = Exception("DynamoDB scan error")
+
+    # Act
+    result = rankings_processor.lambda_handler(event, context)
+
+    # Assert
+    assert result["statusCode"] == 500
+    assert "Error processing rankings: DynamoDB scan error" in result["body"]
+    mock_dynamodb_client_fixture.put_item.assert_not_called()
+    mock_apig_management_client_fixture.post_to_connection.assert_called_once()
+    _, kwargs = mock_apig_management_client_fixture.post_to_connection.call_args
+    assert kwargs["ConnectionId"] == connection_id
+    sent_data = json.loads(kwargs["Data"].decode("utf-8"))
+    assert sent_data["type"] == "error"
+    assert "Error processing rankings: DynamoDB scan error" in sent_data["data"]["message"]
+
+
+def test_lambda_handler_get_ranking_route_post_to_connection_error(mock_boto3_clients):
+    # Arrange
+    mock_dynamodb_client_fixture, mock_apig_management_client_fixture = mock_boto3_clients
+    connection_id = "test-connection-id-post-error"
+    event = {
+        "requestContext": {
+            "connectionId": connection_id,
+            "routeKey": "getRanking",
+            "domainName": "example.com",
+            "stage": "prod",
+        },
+        "end_unixtime": int(time.time() * 1000),
+    }
+    context = {}
+    mock_dynamodb_client_fixture.scan.return_value = {
+        "Items": [
+            {"chatter_user_id": {"S": "user1"}, "reception_unixtime": {"N": str(event["end_unixtime"] - 1000)}},
+        ],
+    }
+    mock_apig_management_client_fixture.post_to_connection.side_effect = Exception("Post to connection failed")
+
+    # Act
+    result = rankings_processor.lambda_handler(event, context)
+
+    # Assert
+    assert result["statusCode"] == 200  # Lambda itself should still return 200 if processing was successful
+    assert result["body"] == "Rankings processed successfully."
+    mock_dynamodb_client_fixture.put_item.assert_called_once()
+    mock_apig_management_client_fixture.post_to_connection.assert_called_once()
+    # The error is caught internally, so no assertion on sent_data for error type is needed here.
+
+
+def test_lambda_handler_top_level_unexpected_error(mocker):
+    # Arrange
+    # Mock boto3.client to ensure it's not called, as the error happens earlier
+    mocker.patch("boto3.client")
+    # Force an error early in lambda_handler, e.g., by passing a non-dict event
+    event = "not a dictionary"
+    context = {}
+
+    # Act
+    result = rankings_processor.lambda_handler(event, context)
+
+    # Assert
+    assert result["statusCode"] == 500
+    assert "Internal server error: 'str' object has no attribute 'get'" in result["body"]
+    mocker.patch("boto3.client").assert_not_called() # Ensure no boto3 clients were initialized
