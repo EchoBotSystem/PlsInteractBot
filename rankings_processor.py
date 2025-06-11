@@ -56,7 +56,7 @@ def lambda_handler(event: dict, context: dict) -> dict:
     return get_ranking(event, connection_id)
 
 
-def get_ranking(event: dict, connection_id: str = None) -> dict:
+def get_ranking(event: dict, connection_id: str | None = None) -> dict:
     """
     Retrieves and processes chat messages from the 'comments' DynamoDB table,
     aggregates chatter activity, and stores the top chatters in the 'rankings' table.
@@ -153,7 +153,6 @@ def get_ranking(event: dict, connection_id: str = None) -> dict:
                 "messageCount": count,
             },
         )
-
 
     # Only post to connection if a connection_id is provided (i.e., it's a WebSocket request)
     if connection_id:
