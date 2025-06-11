@@ -154,7 +154,32 @@ def get_ranking(event: dict, connection_id: str = None) -> dict:
                 "messageCount": count,
             },
         )
-
+    try:
+        # Store the calculated rankings in the 'rankings' DynamoDB table.
+        # The 'ranking_type' serves as the partition key.
+        dynamodb.put_item(
+            TableName=rankings_table_name,
+            Item={
+                "ranking_type": {"S": "chatter_activity"},  # Partition key
+                "window_end_unixtime": {"N": str(end_unixtime)},
+                "window_start_unixtime": {"N": str(start_unixtime)},
+                "top_chatters": {"L": top_chatters_formatted},  # 'L' denotes a List type
+                "processed_at": {
+                    "N": str(end_unixtime),
+                },  # Timestamp of when this ranking was processed
+            },
+        )
+        print(f"Successfully updated rankings for window ending at {end_unixtime}")
+    except Exception as e:
+        # Log any errors encountered during the write operation.
+        print(f"Error writing to rankings table: {e}")
+        # If a connection_id is provided, send an error message back to the client
+        if connection_id:
+            apig_management.post_to_connection(
+                Data=json.dumps({"type": "error", "message": f"Error writing rankings: {e}"}).encode("utf-8"),
+                ConnectionId=connection_id,
+            )
+        return {"statusCode": 500, "body": f"Error writing rankings: {e}"}
 
     # Only post to connection if a connection_id is provided (i.e., it's a WebSocket request)
     if connection_id:
