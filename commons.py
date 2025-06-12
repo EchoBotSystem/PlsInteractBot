@@ -87,8 +87,11 @@ def get_user(user_id: str) -> User:
 
     if "Item" in user_data:
         item = user_data["Item"]
+        if "error_twitch_api" in item and item["error_twitch_api"]["S"] == "f":
+            print(f"User {user_id} found in DynamoDB but marked as error")
+            raise ValueError(f"User {user_id} not found in Twitch API")
         return User(
-            id=item["user_id"]["S"],
+            id=user_id,
             login=item["login"]["S"],
             profile_image_url=item["profile_image_url"]["S"],
         )
@@ -105,12 +108,28 @@ def get_user(user_id: str) -> User:
     )
     twitch_user = json.loads(twitch_user_http_response.data.decode("utf-8"))
     if len(twitch_user["data"]) == 0:
+        dynamodb.put_item(
+            TableName="users",
+            Item={
+                "user_id": {"S": user_id},
+                "error_twitch_api": {"S": "f"},
+                "expireAt": {
+                "N": str(
+                    int(
+                        (
+                            datetime.datetime.now() + datetime.timedelta(days=1)
+                        ).timestamp()
+                    )
+                )
+            },
+            },
+        )
         raise ValueError(f"User {user_id} not found in Twitch API")
 
     dynamodb.put_item(
         TableName="users",
         Item={
-            "user_id": {"S": twitch_user["data"][0]["id"]},
+            "user_id": {"S": user_id},
             "login": {"S": twitch_user["data"][0]["login"]},
             "profile_image_url": {"S": twitch_user["data"][0]["profile_image_url"]},
             "expireAt": {
