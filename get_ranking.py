@@ -1,15 +1,6 @@
-import json
 import time
 from collections import Counter
-import os
 import boto3
-import dataclasses
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class RankingUser:
-    user_id: str
-    message_count: int
 
 
 def get_ranking(
@@ -57,4 +48,3 @@ def get_ranking(
     return [
         {"user_id": user_id, "message_count": count} for user_id, count in top_chatters
     ]
-
