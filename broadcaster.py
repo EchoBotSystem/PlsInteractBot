@@ -1,7 +1,7 @@
 import boto3
 import json
 import os
-import get_ranking
+import commons
 
 
 def lambda_handler(event, context):
@@ -19,11 +19,11 @@ def lambda_handler(event, context):
             apigw.post_to_connection(
                 ConnectionId=connection_id,
                 Data=json.dumps(
-                    {"type": "ranking", "data": get_ranking.get_ranking()}
+                    {"type": "ranking", "data": commons.get_ranking()}
                 ).encode("utf-8"),
             )
         except apigw.exceptions.GoneException:
-            connections_table.delete_item(Key={"connectionId": connection_id})
+            connections_table.delete_item(Key={"connection_id": connection_id})
     return {"statusCode": 200, "body": "Ranking sent to clients"}
 
 

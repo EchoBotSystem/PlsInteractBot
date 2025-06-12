@@ -1,6 +1,6 @@
 import boto3
 import json
-import get_ranking
+import commons
 
 
 def lambda_handler(event, context):
@@ -29,7 +29,7 @@ def lambda_handler(event, context):
             apig_management.post_to_connection(
                 ConnectionId=connection_id,
                 Data=json.dumps(
-                    {"type": "ranking", "data": get_ranking.get_ranking()}
+                    {"type": "ranking", "data": commons.get_ranking()}
                 ).encode("utf-8"),
             )
         except Exception as e:
