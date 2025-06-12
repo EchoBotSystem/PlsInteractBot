@@ -59,10 +59,10 @@ def get_ranking(
             continue
         ranking.append(
             {
-                "user_id": user_data.id,
-                "user_login": user_data.login,
-                "message_count": count,
-                "profile_image_url": user_data.profile_image_url,
+                "userId": user_data.id,
+                "userLogin": user_data.login,
+                "messageCount": count,
+                "profileImageUrl": user_data.profile_image_url,
             }
         )
     return ranking
