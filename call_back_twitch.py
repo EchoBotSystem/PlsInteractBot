@@ -1,8 +1,9 @@
 import hmac
 import json
 from pathlib import Path
+import aws
 
-import boto3
+aws.init_dynamodb()
 
 # Define constants for Twitch EventSub message header keys.
 # These are converted to lowercase as HTTP headers are case-insensitive
@@ -200,12 +201,9 @@ def save_channel_chat_message(event: dict) -> None:
     # This is typically a Unix epoch timestamp.
     reception_unixtime = str(event["requestContext"]["timeEpoch"])
 
-    # Initialize a DynamoDB client.
-    dynamodb = boto3.client("dynamodb")
-
     # Put the item into the 'comments' DynamoDB table.
     # Each attribute needs to specify its type (e.g., "S" for String, "N" for Number).
-    dynamodb.put_item(
+    aws.dynamodb.put_item(
         TableName="comments",
         Item={
             "message_id": {"S": message_id},
@@ -214,4 +212,7 @@ def save_channel_chat_message(event: dict) -> None:
             "message_content": {"S": message_content},
             "reception_unixtime": {"N": reception_unixtime},
         },
+    )
+    print(
+        f"Saved channel chat message: {message_id} from {chatter_user_id} to {broadcaster_user_id}"
     )
