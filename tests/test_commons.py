@@ -74,7 +74,7 @@ def test_get_ranking_no_messages(mock_boto3_clients, mocker):
     """
     mock_boto3_clients.scan.return_value = {"Items": [], "Count": 0}
     mock_get_users = mocker.patch("commons.get_users")
-    mock_get_users.return_value = {} # Ensure it returns an empty dict if called
+    mock_get_users.return_value = {}  # Ensure it returns an empty dict if called
 
     # Mock datetime.datetime.now() for default time range
     mock_now = mocker.patch("commons.time.time")
@@ -316,6 +316,37 @@ def test_get_users_from_twitch_api_and_cache(
                 ],
             },
         )
+
+
+def test_get_users_empty_user_ids():
+    """
+    Test that get_users returns an empty dictionary when an empty list of user IDs is provided.
+    """
+    assert get_users([]) == {}
+
+
+def test_get_users_missing_client_id(mocker):
+    """
+    Test that get_users raises ValueError if TWITCH_CLIENT_ID environment variable is not set.
+    """
+    mocker.patch("commons.boto3.client")
+    mocker.patch.dict("os.environ", {}, clear=True)
+    mocker.patch("commons.get_oauth_token", return_value="mock_oauth_token")
+
+    with pytest.raises(ValueError, match="TWITCH_CLIENT_ID environment variable is not set."):
+        get_users(["some_user_id"])
+
+
+def test_get_users_missing_oauth_token(mocker):
+    """
+    Test that get_users raises ValueError if TWITCH_OAUTH_TOKEN environment variable is not set.
+    """
+    mocker.patch("commons.boto3.client")
+    mocker.patch.dict("os.environ", {}, clear=True)
+    mocker.patch("commons.get_client_id", return_value="mock_client_id")
+
+    with pytest.raises(ValueError, match="TWITCH_OAUTH_TOKEN environment variable is not set."):
+        get_users(["some_user_id"])
 
 
 def test_get_users_not_found_in_twitch_api(
