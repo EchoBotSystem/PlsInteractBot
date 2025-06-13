@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 import pytest
 import urllib3  # Import urllib3 for exception handling
 
-from commons import get_client_id, get_oauth_token, get_user
+from commons import get_client_id, get_oauth_token, get_user, get_ranking
 
 
 @pytest.fixture
@@ -22,6 +22,182 @@ def mock_urllib3_pool_manager(mocker):
     mock_pool_manager = MagicMock()
     mocker.patch("commons.urllib3.PoolManager", return_value=mock_pool_manager)
     return mock_pool_manager
+
+
+def test_get_ranking_success_with_data(mock_boto3_clients, mocker):
+    """
+    Test that get_ranking correctly aggregates messages and fetches user data.
+    """
+    # Mock DynamoDB scan to return chat messages
+    mock_boto3_clients.scan.return_value = {
+        "Items": [
+            {"chatter_user_id": {"S": "user1"}, "reception_unixtime": {"N": "1000"}},
+            {"chatter_user_id": {"S": "user2"}, "reception_unixtime": {"N": "1001"}},
+            {"chatter_user_id": {"S": "user1"}, "reception_unixtime": {"N": "1002"}},
+            {"chatter_user_id": {"S": "user3"}, "reception_unixtime": {"N": "1003"}},
+            {"chatter_user_id": {"S": "user2"}, "reception_unixtime": {"N": "1004"}},
+            {"chatter_user_id": {"S": "user1"}, "reception_unixtime": {"N": "1005"}},
+        ],
+        "Count": 6,
+    }
+
+    # Mock get_user to return predefined User objects
+    mock_get_user = mocker.patch("commons.get_user")
+    mock_get_user.side_effect = [
+        MagicMock(id="user1", login="user1_login", profile_image_url="url1"),
+        MagicMock(id="user2", login="user2_login", profile_image_url="url2"),
+        MagicMock(id="user3", login="user3_login", profile_image_url="url3"),
+    ]
+
+    # Mock datetime.datetime.now() for default time range
+    mock_now = mocker.patch("commons.time.time")
+    mock_now.return_value = 2000 / 1000  # Current time in seconds
+
+    ranking = get_ranking()
+
+    assert len(ranking) == 3
+    assert ranking[0]["userId"] == "user1"
+    assert ranking[0]["messageCount"] == 3
+    assert ranking[0]["userLogin"] == "user1_login"
+    assert ranking[1]["userId"] == "user2"
+    assert ranking[1]["messageCount"] == 2
+    assert ranking[2]["userId"] == "user3"
+    assert ranking[2]["messageCount"] == 1
+
+    mock_boto3_clients.scan.assert_called_once()
+    assert mock_get_user.call_count == 3
+
+
+def test_get_ranking_no_messages(mock_boto3_clients, mocker):
+    """
+    Test that get_ranking returns an empty list when no messages are found.
+    """
+    mock_boto3_clients.scan.return_value = {"Items": [], "Count": 0}
+    mock_get_user = mocker.patch("commons.get_user")
+
+    # Mock datetime.datetime.now() for default time range
+    mock_now = mocker.patch("commons.time.time")
+    mock_now.return_value = 2000 / 1000
+
+    ranking = get_ranking()
+
+    assert ranking == []
+    mock_boto3_clients.scan.assert_called_once()
+    mock_get_user.assert_not_called()
+
+
+def test_get_ranking_user_not_found_graceful_handling(mock_boto3_clients, mocker):
+    """
+    Test that get_ranking handles ValueError from get_user gracefully
+    and continues processing other users.
+    """
+    mock_boto3_clients.scan.return_value = {
+        "Items": [
+            {"chatter_user_id": {"S": "user1"}, "reception_unixtime": {"N": "1000"}},
+            {"chatter_user_id": {"S": "user_error"}, "reception_unixtime": {"N": "1001"}},
+            {"chatter_user_id": {"S": "user2"}, "reception_unixtime": {"N": "1002"}},
+        ],
+        "Count": 3,
+    }
+
+    mock_get_user = mocker.patch("commons.get_user")
+    mock_get_user.side_effect = [
+        MagicMock(id="user1", login="user1_login", profile_image_url="url1"),
+        ValueError("User user_error not found"),  # Simulate error for user_error
+        MagicMock(id="user2", login="user2_login", profile_image_url="url2"),
+    ]
+
+    # Mock datetime.datetime.now() for default time range
+    mock_now = mocker.patch("commons.time.time")
+    mock_now.return_value = 2000 / 1000
+
+    ranking = get_ranking()
+
+    assert len(ranking) == 2  # user_error should be skipped
+    assert ranking[0]["userId"] == "user1"
+    assert ranking[1]["userId"] == "user2"
+    assert mock_get_user.call_count == 3
+
+
+def test_get_ranking_time_range(mock_boto3_clients, mocker):
+    """
+    Test that get_ranking uses the provided start_unixtime and end_unixtime.
+    """
+    start_time = 500
+    end_time = 1500
+
+    mock_boto3_clients.scan.return_value = {"Items": [], "Count": 0}
+    mocker.patch("commons.get_user")  # Mock get_user as it won't be called for empty results
+
+    get_ranking(start_unixtime=start_time, end_unixtime=end_time)
+
+    mock_boto3_clients.scan.assert_called_once_with(
+        TableName="comments",
+        ProjectionExpression="chatter_user_id, reception_unixtime",
+        FilterExpression="reception_unixtime BETWEEN :start_time AND :end_time",
+        ExpressionAttributeValues={
+            ":start_time": {"N": str(start_time)},
+            ":end_time": {"N": str(end_time)},
+        },
+    )
+
+
+def test_get_ranking_dynamodb_scan_pagination(mock_boto3_clients, mocker):
+    """
+    Test that get_ranking handles DynamoDB scan pagination correctly.
+    """
+    # First scan response with LastEvaluatedKey
+    mock_boto3_clients.scan.side_effect = [
+        {
+            "Items": [{"chatter_user_id": {"S": "userA"}, "reception_unixtime": {"N": "1000"}}],
+            "LastEvaluatedKey": {"chatter_user_id": {"S": "userA_key"}},
+        },
+        # Second scan response without LastEvaluatedKey
+        {
+            "Items": [{"chatter_user_id": {"S": "userB"}, "reception_unixtime": {"N": "1001"}}],
+            "LastEvaluatedKey": None,
+        },
+    ]
+
+    mock_get_user = mocker.patch("commons.get_user")
+    mock_get_user.side_effect = [
+        MagicMock(id="userA", login="userA_login", profile_image_url="urlA"),
+        MagicMock(id="userB", login="userB_login", profile_image_url="urlB"),
+    ]
+
+    # Mock datetime.datetime.now() for default time range
+    mock_now = mocker.patch("commons.time.time")
+    mock_now.return_value = 2000 / 1000
+
+    ranking = get_ranking()
+
+    assert len(ranking) == 2
+    assert ranking[0]["userId"] == "userA"
+    assert ranking[1]["userId"] == "userB"
+
+    # Assert that scan was called twice
+    assert mock_boto3_clients.scan.call_count == 2
+    # Assert the first call
+    mock_boto3_clients.scan.assert_any_call(
+        TableName="comments",
+        ProjectionExpression="chatter_user_id, reception_unixtime",
+        FilterExpression="reception_unixtime BETWEEN :start_time AND :end_time",
+        ExpressionAttributeValues={
+            ":start_time": {"N": str(int(mock_now.return_value * 1000) - (60 * 60 * 24 * 30 * 1000))},
+            ":end_time": {"N": str(int(mock_now.return_value * 1000))},
+        },
+    )
+    # Assert the second call with ExclusiveStartKey
+    mock_boto3_clients.scan.assert_any_call(
+        TableName="comments",
+        ProjectionExpression="chatter_user_id, reception_unixtime",
+        FilterExpression="reception_unixtime BETWEEN :start_time AND :end_time",
+        ExpressionAttributeValues={
+            ":start_time": {"N": str(int(mock_now.return_value * 1000) - (60 * 60 * 24 * 30 * 1000))},
+            ":end_time": {"N": str(int(mock_now.return_value * 1000))},
+        },
+        ExclusiveStartKey={"chatter_user_id": {"S": "userA_key"}},
+    )
 
 
 def test_get_user_from_dynamodb_cache(mock_boto3_clients, mock_urllib3_pool_manager):
