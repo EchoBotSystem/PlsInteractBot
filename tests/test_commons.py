@@ -3,9 +3,9 @@ import json
 from unittest.mock import MagicMock
 
 import pytest
-import urllib3  # Import urllib3 for exception handling
+import urllib3
 
-from commons import get_client_id, get_oauth_token, get_user, get_ranking
+from commons import get_client_id, get_oauth_token, get_ranking, get_user
 
 
 @pytest.fixture
@@ -103,7 +103,7 @@ def test_get_ranking_user_not_found_graceful_handling(mock_boto3_clients, mocker
     mock_get_user = mocker.patch("commons.get_user")
     mock_get_user.side_effect = [
         MagicMock(id="user1", login="user1_login", profile_image_url="url1"),
-        ValueError("User user_error not found"),  # Simulate error for user_error
+        ValueError("User user_error not found"),
         MagicMock(id="user2", login="user2_login", profile_image_url="url2"),
     ]
 
@@ -113,7 +113,7 @@ def test_get_ranking_user_not_found_graceful_handling(mock_boto3_clients, mocker
 
     ranking = get_ranking()
 
-    assert len(ranking) == 2  # user_error should be skipped
+    assert len(ranking) == 2
     assert ranking[0]["userId"] == "user1"
     assert ranking[1]["userId"] == "user2"
     assert mock_get_user.call_count == 3
@@ -127,7 +127,7 @@ def test_get_ranking_time_range(mock_boto3_clients, mocker):
     end_time = 1500
 
     mock_boto3_clients.scan.return_value = {"Items": [], "Count": 0}
-    mocker.patch("commons.get_user")  # Mock get_user as it won't be called for empty results
+    mocker.patch("commons.get_user")
 
     get_ranking(start_unixtime=start_time, end_unixtime=end_time)
 

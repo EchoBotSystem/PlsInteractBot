@@ -9,6 +9,9 @@ import boto3
 import urllib3
 
 
+THIRTY_DAYS_IN_MS = 60 * 60 * 24 * 30 * 1000
+
+
 @dataclasses.dataclass(
     frozen=True,
     slots=True,
@@ -56,7 +59,7 @@ def get_ranking(
     if end_unixtime is None:
         end_unixtime = current_time_ms
     if start_unixtime is None:
-        start_unixtime = current_time_ms - (60 * 60 * 24 * 30 * 1000)
+        start_unixtime = current_time_ms - THIRTY_DAYS_IN_MS
 
     print(f"Getting ranking messages from Unix time {start_unixtime} to {end_unixtime}")
 
