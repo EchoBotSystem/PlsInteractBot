@@ -5,8 +5,13 @@ import os
 import time
 from collections import Counter
 
-import boto3
 import urllib3
+
+import aws
+
+aws.init_dynamodb()
+aws.init_comments_table()
+aws.init_users_table()
 
 THIRTY_DAYS_IN_MS = 60 * 60 * 24 * 30 * 1000
 
@@ -62,7 +67,6 @@ def get_ranking(
 
     print(f"Getting ranking messages from Unix time {start_unixtime} to {end_unixtime}")
 
-    dynamodb = boto3.client("dynamodb")
     all_messages = []
     last_evaluated_key = None
 
@@ -78,7 +82,7 @@ def get_ranking(
         }
         if last_evaluated_key:
             scan_params["ExclusiveStartKey"] = last_evaluated_key
-        response = dynamodb.scan(**scan_params)
+        response = aws.dynamodb.scan(**scan_params)
         all_messages.extend(response.get("Items", []))
         last_evaluated_key = response.get("LastEvaluatedKey")
         if not last_evaluated_key:
@@ -91,7 +95,9 @@ def get_ranking(
 
     print(f"Aggregated chatter message counts: {chatter_message_counts}")
 
-    top_chatters_ids = [user_id for user_id, _ in chatter_message_counts.most_common(10)]
+    top_chatters_ids = [
+        user_id for user_id, _ in chatter_message_counts.most_common(10)
+    ]
 
     user_data_map = {}
     if top_chatters_ids:
@@ -138,7 +144,6 @@ def get_users(user_ids: list[str]) -> dict[str, User]:
     if not user_ids:
         return {}
 
-    dynamodb = boto3.client("dynamodb")
     found_users_map: dict[str, User] = {}
     twitch_fetch_ids: list[str] = []
     cache_write_requests: list[dict] = []
@@ -149,8 +154,7 @@ def get_users(user_ids: list[str]) -> dict[str, User]:
             "Keys": [{"user_id": {"S": user_id}} for user_id in user_ids],
         },
     }
-    response = dynamodb.batch_get_item(RequestItems=request_items)
-
+    response = aws.dynamodb.batch_get_item(RequestItems=request_items)
     for item in response.get("Responses", {}).get("users", []):
         user_id = item["user_id"]["S"]
         if "error_twitch_api" in item and item["error_twitch_api"]["S"] == "f":
@@ -205,7 +209,9 @@ def get_users(user_ids: list[str]) -> dict[str, User]:
     twitch_response_data = json.loads(twitch_user_http_response.data.decode("utf-8"))
 
     # Prepare expiration time for cache entries (1 day from now)
-    expire_at_timestamp = str(int((datetime.datetime.now() + datetime.timedelta(days=1)).timestamp()))
+    expire_at_timestamp = str(
+        int((datetime.datetime.now() + datetime.timedelta(days=1)).timestamp())
+    )
 
     # Process Twitch API response
     fetched_twitch_ids = set()
@@ -252,7 +258,7 @@ def get_users(user_ids: list[str]) -> dict[str, User]:
         # batch_write_item has a limit of 25 items per request.
         # For the current use case (top 10 chatters), this limit is unlikely to be hit.
         # For larger batches, this would need to be chunked into multiple calls.
-        dynamodb.batch_write_item(RequestItems={"users": cache_write_requests})
+        aws.boto3.batch_write_item(RequestItems={"users": cache_write_requests})
 
     return found_users_map
 

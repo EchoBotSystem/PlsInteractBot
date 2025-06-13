@@ -1,9 +1,11 @@
 import json
-import os
 
-import boto3
-
+import aws
 import commons
+
+aws.init_dynamodb()
+aws.init_connections_table()
+aws.init_apigw()
 
 
 def lambda_handler(event: dict, contex: dict) -> dict:
@@ -27,44 +29,17 @@ def lambda_handler(event: dict, contex: dict) -> dict:
         apigw.exceptions.GoneException: If a WebSocket connection is no longer valid,
                                         it is caught and the connection is removed.
     """
-    dynamodb = boto3.resource("dynamodb")
-    connections_table = dynamodb.Table("web_socket_sonnections")
-
-    apigw = boto3.client("apigatewaymanagementapi", endpoint_url=get_api_gateway_endpoint())
-
     ranking_data = commons.get_ranking()
-    connections = connections_table.scan().get("Items", [])
+    connections = aws.connections_table.scan().get("Items", [])
     for connection in connections:
         connection_id = connection["connection_id"]
         try:
-            apigw.post_to_connection(
+            aws.apigw.post_to_connection(
                 ConnectionId=connection_id,
-                Data=json.dumps({"type": "ranking", "data": ranking_data}).encode("utf-8"),
+                Data=json.dumps({"type": "ranking", "data": ranking_data}).encode(
+                    "utf-8"
+                ),
             )
-        except apigw.exceptions.GoneException:
-            connections_table.delete_item(Key={"connection_id": connection_id})
+        except aws.apigw.exceptions.GoneException:
+            aws.connections_table.delete_item(Key={"connection_id": connection_id})
     return {"statusCode": 200, "body": "Ranking sent to clients"}
-
-
-def get_api_gateway_endpoint() -> str:
-    """
-    Constructs the API Gateway management endpoint URL.
-
-    This URL is used to post messages back to connected WebSocket clients.
-    It relies on 'DOMAIN' and 'STAGE' environment variables.
-
-    Returns:
-        str: The constructed API Gateway management endpoint URL.
-
-    Raises:
-        KeyError: If 'DOMAIN' or 'STAGE' environment variables are not set.
-    """
-    domain = os.environ.get("DOMAIN")
-    stage = os.environ.get("STAGE")
-
-    if not domain:
-        raise KeyError("Environment variable 'DOMAIN' not set.")
-    if not stage:
-        raise KeyError("Environment variable 'STAGE' not set.")
-
-    return f"https://{domain}/{stage}"
