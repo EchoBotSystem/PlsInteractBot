@@ -32,13 +32,14 @@ def lambda_handler(event: dict, contex: dict) -> dict:
 
     apigw = boto3.client("apigatewaymanagementapi", endpoint_url=get_api_gateway_endpoint())
 
+    ranking_data = commons.get_ranking()
     connections = connections_table.scan().get("Items", [])
     for connection in connections:
         connection_id = connection["connection_id"]
         try:
             apigw.post_to_connection(
                 ConnectionId=connection_id,
-                Data=json.dumps({"type": "ranking", "data": commons.get_ranking()}).encode("utf-8"),
+                Data=json.dumps({"type": "ranking", "data": ranking_data}).encode("utf-8"),
             )
         except apigw.exceptions.GoneException:
             connections_table.delete_item(Key={"connection_id": connection_id})
@@ -58,4 +59,12 @@ def get_api_gateway_endpoint() -> str:
     Raises:
         KeyError: If 'DOMAIN' or 'STAGE' environment variables are not set.
     """
-    return f"https://{os.environ.get('DOMAIN')}/{os.environ.get('STAGE')}"
+    domain = os.environ.get("DOMAIN")
+    stage = os.environ.get("STAGE")
+
+    if not domain:
+        raise KeyError("Environment variable 'DOMAIN' not set.")
+    if not stage:
+        raise KeyError("Environment variable 'STAGE' not set.")
+
+    return f"https://{domain}/{stage}"
