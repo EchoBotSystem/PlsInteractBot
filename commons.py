@@ -181,17 +181,25 @@ def get_users(user_ids: list[str]) -> dict[str, User]:
     print(f"Users {twitch_fetch_ids} not found in DynamoDB, fetching from Twitch API")
 
     # 2. Fetch from Twitch API in a single batched request
-    http = urllib3.PoolManager()
     # Twitch API expects multiple 'id' query parameters for batching
     fields = [("id", user_id) for user_id in twitch_fetch_ids]
 
+    client_id = get_client_id()
+    oauth_token = get_oauth_token()
+
+    if not client_id:
+        raise ValueError("TWITCH_CLIENT_ID environment variable is not set.")
+    if not oauth_token:
+        raise ValueError("TWITCH_OAUTH_TOKEN environment variable is not set.")
+
+    http = urllib3.PoolManager()
     twitch_user_http_response = http.request(
         "GET",
         "https://api.twitch.tv/helix/users",
         fields=fields,
         headers={
-            "Client-ID": get_client_id(),
-            "Authorization": f"Bearer {get_oauth_token()}",
+            "Client-ID": client_id,
+            "Authorization": f"Bearer {oauth_token}",
         },
     )
     twitch_response_data = json.loads(twitch_user_http_response.data.decode("utf-8"))
