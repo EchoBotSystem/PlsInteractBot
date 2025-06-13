@@ -134,9 +134,9 @@ def get_user(user_id: str) -> User:
     )
 
 
-def get_client_id() -> str:
+def get_client_id() -> str | None:
     return os.environ.get("TWITCH_CLIENT_ID")
 
 
-def get_oauth_token() -> str:
+def get_oauth_token() -> str | None:
     return os.environ.get("TWITCH_OAUTH_TOKEN")
