@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 import pytest
 import urllib3
 
-from commons import get_client_id, get_oauth_token, get_ranking, get_user
+from commons import get_client_id, get_oauth_token, get_ranking, get_users
 
 
 @pytest.fixture
@@ -41,13 +41,13 @@ def test_get_ranking_success_with_data(mock_boto3_clients, mocker):
         "Count": 6,
     }
 
-    # Mock get_user to return predefined User objects
-    mock_get_user = mocker.patch("commons.get_user")
-    mock_get_user.side_effect = [
-        MagicMock(id="user1", login="user1_login", profile_image_url="url1"),
-        MagicMock(id="user2", login="user2_login", profile_image_url="url2"),
-        MagicMock(id="user3", login="user3_login", profile_image_url="url3"),
-    ]
+    # Mock get_users to return predefined User objects
+    mock_get_users = mocker.patch("commons.get_users")
+    mock_get_users.return_value = {
+        "user1": MagicMock(id="user1", login="user1_login", profile_image_url="url1"),
+        "user2": MagicMock(id="user2", login="user2_login", profile_image_url="url2"),
+        "user3": MagicMock(id="user3", login="user3_login", profile_image_url="url3"),
+    }
 
     # Mock datetime.datetime.now() for default time range
     mock_now = mocker.patch("commons.time.time")
@@ -65,7 +65,7 @@ def test_get_ranking_success_with_data(mock_boto3_clients, mocker):
     assert ranking[2]["messageCount"] == 1
 
     mock_boto3_clients.scan.assert_called_once()
-    assert mock_get_user.call_count == 3
+    assert mock_get_users.call_count == 1
 
 
 def test_get_ranking_no_messages(mock_boto3_clients, mocker):
@@ -73,7 +73,8 @@ def test_get_ranking_no_messages(mock_boto3_clients, mocker):
     Test that get_ranking returns an empty list when no messages are found.
     """
     mock_boto3_clients.scan.return_value = {"Items": [], "Count": 0}
-    mock_get_user = mocker.patch("commons.get_user")
+    mock_get_users = mocker.patch("commons.get_users")
+    mock_get_users.return_value = {} # Ensure it returns an empty dict if called
 
     # Mock datetime.datetime.now() for default time range
     mock_now = mocker.patch("commons.time.time")
@@ -83,12 +84,13 @@ def test_get_ranking_no_messages(mock_boto3_clients, mocker):
 
     assert ranking == []
     mock_boto3_clients.scan.assert_called_once()
-    mock_get_user.assert_not_called()
+    # get_users should not be called if there are no messages
+    mock_get_users.assert_not_called()
 
 
 def test_get_ranking_user_not_found_graceful_handling(mock_boto3_clients, mocker):
     """
-    Test that get_ranking handles ValueError from get_user gracefully
+    Test that get_ranking handles ValueError from get_users gracefully
     and continues processing other users.
     """
     mock_boto3_clients.scan.return_value = {
@@ -100,12 +102,12 @@ def test_get_ranking_user_not_found_graceful_handling(mock_boto3_clients, mocker
         "Count": 3,
     }
 
-    mock_get_user = mocker.patch("commons.get_user")
-    mock_get_user.side_effect = [
-        MagicMock(id="user1", login="user1_login", profile_image_url="url1"),
-        ValueError("User user_error not found"),
-        MagicMock(id="user2", login="user2_login", profile_image_url="url2"),
-    ]
+    mock_get_users = mocker.patch("commons.get_users")
+    mock_get_users.return_value = {
+        "user1": MagicMock(id="user1", login="user1_login", profile_image_url="url1"),
+        "user2": MagicMock(id="user2", login="user2_login", profile_image_url="url2"),
+        # user_error is intentionally not included, simulating not found
+    }
 
     # Mock datetime.datetime.now() for default time range
     mock_now = mocker.patch("commons.time.time")
@@ -116,7 +118,8 @@ def test_get_ranking_user_not_found_graceful_handling(mock_boto3_clients, mocker
     assert len(ranking) == 2
     assert ranking[0]["userId"] == "user1"
     assert ranking[1]["userId"] == "user2"
-    assert mock_get_user.call_count == 3
+    # get_users is called once with the list of top chatters
+    mock_get_users.assert_called_once_with(["user1", "user_error", "user2"])
 
 
 def test_get_ranking_time_range(mock_boto3_clients, mocker):
@@ -127,7 +130,7 @@ def test_get_ranking_time_range(mock_boto3_clients, mocker):
     end_time = 1500
 
     mock_boto3_clients.scan.return_value = {"Items": [], "Count": 0}
-    mocker.patch("commons.get_user")
+    mocker.patch("commons.get_users")
 
     get_ranking(start_unixtime=start_time, end_unixtime=end_time)
 
@@ -159,11 +162,11 @@ def test_get_ranking_dynamodb_scan_pagination(mock_boto3_clients, mocker):
         },
     ]
 
-    mock_get_user = mocker.patch("commons.get_user")
-    mock_get_user.side_effect = [
-        MagicMock(id="userA", login="userA_login", profile_image_url="urlA"),
-        MagicMock(id="userB", login="userB_login", profile_image_url="urlB"),
-    ]
+    mock_get_users = mocker.patch("commons.get_users")
+    mock_get_users.return_value = {
+        "userA": MagicMock(id="userA", login="userA_login", profile_image_url="urlA"),
+        "userB": MagicMock(id="userB", login="userB_login", profile_image_url="urlB"),
+    }
 
     # Mock datetime.datetime.now() for default time range
     mock_now = mocker.patch("commons.time.time")
@@ -200,48 +203,57 @@ def test_get_ranking_dynamodb_scan_pagination(mock_boto3_clients, mocker):
     )
 
 
-def test_get_user_from_dynamodb_cache(mock_boto3_clients, mock_urllib3_pool_manager):
+def test_get_users_from_dynamodb_cache(mock_boto3_clients, mock_urllib3_pool_manager):
     """
-    Test that get_user retrieves user data from DynamoDB cache if available.
+    Test that get_users retrieves user data from DynamoDB cache if available.
     """
     user_id = "12345"
     expected_login = "testuser"
     expected_profile_image_url = "http://example.com/profile.png"
 
-    mock_boto3_clients.get_item.return_value = {
-        "Item": {
-            "user_id": {"S": user_id},
-            "login": {"S": expected_login},
-            "profile_image_url": {"S": expected_profile_image_url},
+    mock_boto3_clients.batch_get_item.return_value = {
+        "Responses": {
+            "users": [
+                {
+                    "user_id": {"S": user_id},
+                    "login": {"S": expected_login},
+                    "profile_image_url": {"S": expected_profile_image_url},
+                },
+            ],
         },
     }
 
-    user = get_user(user_id)
+    users_map = get_users([user_id])
 
+    assert user_id in users_map
+    user = users_map[user_id]
     assert user.id == user_id
     assert user.login == expected_login
     assert user.profile_image_url == expected_profile_image_url
-    mock_boto3_clients.get_item.assert_called_once_with(
-        TableName="users",
-        Key={"user_id": {"S": user_id}},
+    mock_boto3_clients.batch_get_item.assert_called_once_with(
+        RequestItems={
+            "users": {
+                "Keys": [{"user_id": {"S": user_id}}],
+            },
+        },
     )
     mock_urllib3_pool_manager.request.assert_not_called()
 
 
-def test_get_user_from_twitch_api_and_cache(
+def test_get_users_from_twitch_api_and_cache(
     mock_boto3_clients,
     mock_urllib3_pool_manager,
     mocker,
 ):
     """
-    Test that get_user fetches user data from Twitch API if not in DynamoDB
+    Test that get_users fetches user data from Twitch API if not in DynamoDB
     and then caches it.
     """
     user_id = "67890"
     expected_login = "newuser"
     expected_profile_image_url = "http://example.com/new_profile.png"
 
-    mock_boto3_clients.get_item.return_value = {}  # Not found in DynamoDB
+    mock_boto3_clients.batch_get_item.return_value = {"Responses": {"users": []}}  # Not found in DynamoDB
 
     # Prepare the JSON response as bytes
     json_response_str = json.dumps(
@@ -272,40 +284,52 @@ def test_get_user_from_twitch_api_and_cache(
         mock_now.now.return_value = datetime.datetime(2025, 1, 1, 12, 0, 0)
         mock_now.timedelta = datetime.timedelta  # Keep timedelta original
 
-        user = get_user(user_id)
+        users_map = get_users([user_id])
 
+        assert user_id in users_map
+        user = users_map[user_id]
         assert user.id == user_id
         assert user.login == expected_login
         assert user.profile_image_url == expected_profile_image_url
 
-        mock_boto3_clients.get_item.assert_called_once_with(
-            TableName="users",
-            Key={"user_id": {"S": user_id}},
+        mock_boto3_clients.batch_get_item.assert_called_once_with(
+            RequestItems={
+                "users": {
+                    "Keys": [{"user_id": {"S": user_id}}],
+                },
+            },
         )
         mock_urllib3_pool_manager.request.assert_called_once()
-        mock_boto3_clients.put_item.assert_called_once_with(
-            TableName="users",
-            Item={
-                "user_id": {"S": user_id},
-                "login": {"S": expected_login},
-                "profile_image_url": {"S": expected_profile_image_url},
-                "expireAt": {"N": str(int(datetime.datetime(2025, 2, 1, 12, 0, 0).timestamp()))},
+        mock_boto3_clients.batch_write_item.assert_called_once_with(
+            RequestItems={
+                "users": [
+                    {
+                        "PutRequest": {
+                            "Item": {
+                                "user_id": {"S": user_id},
+                                "login": {"S": expected_login},
+                                "profile_image_url": {"S": expected_profile_image_url},
+                                "expireAt": {"N": str(int(datetime.datetime(2025, 2, 1, 12, 0, 0).timestamp()))},
+                            },
+                        },
+                    },
+                ],
             },
         )
 
 
-def test_get_user_not_found_in_twitch_api(
+def test_get_users_not_found_in_twitch_api(
     mock_boto3_clients,
     mock_urllib3_pool_manager,
     mocker,
 ):
     """
-    Test that get_user raises ValueError if user not found in Twitch API
+    Test that get_users raises ValueError if user not found in Twitch API
     and caches the error.
     """
     user_id = "99999"
 
-    mock_boto3_clients.get_item.return_value = {}  # Not found in DynamoDB
+    mock_boto3_clients.batch_get_item.return_value = {"Responses": {"users": []}}  # Not found in DynamoDB
 
     # Prepare the JSON response as bytes
     json_response_str = json.dumps(
@@ -327,51 +351,78 @@ def test_get_user_not_found_in_twitch_api(
         mock_now.now.return_value = datetime.datetime(2025, 1, 1, 12, 0, 0)
         mock_now.timedelta = datetime.timedelta  # Keep timedelta original
 
-        with pytest.raises(ValueError, match=f"User {user_id} not found in Twitch API"):
-            get_user(user_id)
+        users_map = get_users([user_id])
 
-        mock_boto3_clients.get_item.assert_called_once()
+        # Assert that the user is not in the returned map
+        assert user_id not in users_map
+
+        mock_boto3_clients.batch_get_item.assert_called_once_with(
+            RequestItems={
+                "users": {
+                    "Keys": [{"user_id": {"S": user_id}}],
+                },
+            },
+        )
         mock_urllib3_pool_manager.request.assert_called_once()
-        mock_boto3_clients.put_item.assert_called_once_with(
-            TableName="users",
-            Item={
-                "user_id": {"S": user_id},
-                "error_twitch_api": {"S": "f"},
-                "expireAt": {"N": str(int(datetime.datetime(2025, 2, 1, 12, 0, 0).timestamp()))},
+        mock_boto3_clients.batch_write_item.assert_called_once_with(
+            RequestItems={
+                "users": [
+                    {
+                        "PutRequest": {
+                            "Item": {
+                                "user_id": {"S": user_id},
+                                "error_twitch_api": {"S": "f"},
+                                "expireAt": {"N": str(int(datetime.datetime(2025, 2, 1, 12, 0, 0).timestamp()))},
+                            },
+                        },
+                    },
+                ],
             },
         )
 
 
-def test_get_user_dynamodb_cached_error(mock_boto3_clients, mock_urllib3_pool_manager):
+def test_get_users_dynamodb_cached_error(mock_boto3_clients, mock_urllib3_pool_manager):
     """
-    Test that get_user raises ValueError if user is found in DynamoDB
+    Test that get_users raises ValueError if user is found in DynamoDB
     but marked as an error from a previous Twitch API lookup.
     """
     user_id = "54321"
-    mock_boto3_clients.get_item.return_value = {
-        "Item": {
-            "user_id": {"S": user_id},
-            "error_twitch_api": {"S": "f"},
+    mock_boto3_clients.batch_get_item.return_value = {
+        "Responses": {
+            "users": [
+                {
+                    "user_id": {"S": user_id},
+                    "error_twitch_api": {"S": "f"},
+                },
+            ],
         },
     }
 
-    with pytest.raises(ValueError, match=f"User {user_id} not found in Twitch API"):
-        get_user(user_id)
+    users_map = get_users([user_id])
 
-    mock_boto3_clients.get_item.assert_called_once()
+    # Assert that the user is not in the returned map because it's marked as an error
+    assert user_id not in users_map
+
+    mock_boto3_clients.batch_get_item.assert_called_once_with(
+        RequestItems={
+            "users": {
+                "Keys": [{"user_id": {"S": user_id}}],
+            },
+        },
+    )
     mock_urllib3_pool_manager.request.assert_not_called()
 
 
-def test_get_user_twitch_api_http_error(
+def test_get_users_twitch_api_http_error(
     mock_boto3_clients,
     mock_urllib3_pool_manager,
 ):
     """
-    Test that get_user handles HTTP errors from Twitch API gracefully.
+    Test that get_users handles HTTP errors from Twitch API gracefully.
     """
     user_id = "11223"
     user_id = "11223"  # Redefine user_id for clarity in this test
-    mock_boto3_clients.get_item.return_value = {}  # Not found in DynamoDB
+    mock_boto3_clients.batch_get_item.return_value = {"Responses": {"users": []}}  # Not found in DynamoDB
 
     # Correctly set the side_effect for the mocked request method
     mock_urllib3_pool_manager.request.side_effect = urllib3.exceptions.MaxRetryError(
@@ -385,11 +436,17 @@ def test_get_user_twitch_api_http_error(
         mp.setenv("TWITCH_OAUTH_TOKEN", "mock_oauth_token")
 
         with pytest.raises(urllib3.exceptions.MaxRetryError):
-            get_user(user_id)
+            get_users([user_id])
 
-        mock_boto3_clients.get_item.assert_called_once()
+        mock_boto3_clients.batch_get_item.assert_called_once_with(
+            RequestItems={
+                "users": {
+                    "Keys": [{"user_id": {"S": user_id}}],
+                },
+            },
+        )
         mock_urllib3_pool_manager.request.assert_called_once()
-        mock_boto3_clients.put_item.assert_not_called()  # Should not cache on API error
+        mock_boto3_clients.batch_write_item.assert_not_called()  # Should not cache on API error
 
 
 def test_get_client_id():
