@@ -1,16 +1,16 @@
-import time
-from collections import Counter
-import boto3
 import dataclasses
-import urllib3
-import os
 import datetime
 import json
+import os
+import time
+from collections import Counter
+
+import boto3
+import urllib3
 
 
 def get_ranking(
-    start_unixtime: int = int(time.time() * 1000)
-    - (60 * 60 * 24 * 30 * 1000),  # Now minus 30 days in milliseconds
+    start_unixtime: int = int(time.time() * 1000) - (60 * 60 * 24 * 30 * 1000),  # Now minus 30 days in milliseconds
     end_unixtime: int = int(time.time() * 1000),  # Now in milliseconds
 ) -> list[
     dict[
@@ -63,7 +63,7 @@ def get_ranking(
                 "userLogin": user_data.login,
                 "messageCount": count,
                 "profileImageUrl": user_data.profile_image_url,
-            }
+            },
         )
     return ranking
 
@@ -113,15 +113,7 @@ def get_user(user_id: str) -> User:
             Item={
                 "user_id": {"S": user_id},
                 "error_twitch_api": {"S": "f"},
-                "expireAt": {
-                "N": str(
-                    int(
-                        (
-                            datetime.datetime.now() + datetime.timedelta(days=1)
-                        ).timestamp()
-                    )
-                )
-            },
+                "expireAt": {"N": str(int((datetime.datetime.now() + datetime.timedelta(days=1)).timestamp()))},
             },
         )
         raise ValueError(f"User {user_id} not found in Twitch API")
@@ -132,15 +124,7 @@ def get_user(user_id: str) -> User:
             "user_id": {"S": user_id},
             "login": {"S": twitch_user["data"][0]["login"]},
             "profile_image_url": {"S": twitch_user["data"][0]["profile_image_url"]},
-            "expireAt": {
-                "N": str(
-                    int(
-                        (
-                            datetime.datetime.now() + datetime.timedelta(days=1)
-                        ).timestamp()
-                    )
-                )
-            },
+            "expireAt": {"N": str(int((datetime.datetime.now() + datetime.timedelta(days=1)).timestamp()))},
         },
     )
     return User(

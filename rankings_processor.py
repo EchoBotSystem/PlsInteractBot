@@ -55,18 +55,17 @@ def lambda_handler(event: dict, context: dict) -> dict:
 
             if route_key == "$connect":
                 return {"statusCode": 200}
-            elif route_key == "getRanking":
+            if route_key == "getRanking":
                 print("Enter in route getRanking")
                 return get_ranking(event, connection_id)
-            elif route_key == "$disconnect":
+            if route_key == "$disconnect":
                 return {"statusCode": 200}
-            else:  # Unknown WebSocket route key
-                print(f"Unknown route key: {route_key}")
-                return {"statusCode": 400, "body": f"Unknown route key: {route_key}"}
-        else:
-            # Not a WebSocket event, assume direct invocation
-            print("Direct invocation for ranking processing.")
-            return get_ranking(event, connection_id) # connection_id will be None for direct invocations
+            # Unknown WebSocket route key
+            print(f"Unknown route key: {route_key}")
+            return {"statusCode": 400, "body": f"Unknown route key: {route_key}"}
+        # Not a WebSocket event, assume direct invocation
+        print("Direct invocation for ranking processing.")
+        return get_ranking(event, connection_id)  # connection_id will be None for direct invocations
 
     except Exception as e:
         print(f"An unexpected error occurred in lambda_handler: {e}")

@@ -1,16 +1,16 @@
-import boto3
 import json
 import os
+
+import boto3
+
 import commons
 
 
-def lambda_handler(event, context):
+def lambda_handler(event: dict, contex: dict) -> dict:
     dynamodb = boto3.resource("dynamodb")
     connections_table = dynamodb.Table("web_socket_sonnections")
 
-    apigw = boto3.client(
-        "apigatewaymanagementapi", endpoint_url=get_api_gateway_endpoint()
-    )
+    apigw = boto3.client("apigatewaymanagementapi", endpoint_url=get_api_gateway_endpoint())
 
     connections = connections_table.scan().get("Items", [])
     for connection in connections:
@@ -18,9 +18,7 @@ def lambda_handler(event, context):
         try:
             apigw.post_to_connection(
                 ConnectionId=connection_id,
-                Data=json.dumps(
-                    {"type": "ranking", "data": commons.get_ranking()}
-                ).encode("utf-8"),
+                Data=json.dumps({"type": "ranking", "data": commons.get_ranking()}).encode("utf-8"),
             )
         except apigw.exceptions.GoneException:
             connections_table.delete_item(Key={"connection_id": connection_id})

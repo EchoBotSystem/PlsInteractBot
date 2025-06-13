@@ -413,4 +413,4 @@ def test_lambda_handler_top_level_unexpected_error(mocker):
     # Assert
     assert result["statusCode"] == 500
     assert "Internal server error: 'str' object has no attribute 'get'" in result["body"]
-    mocker.patch("boto3.client").assert_not_called() # Ensure no boto3 clients were initialized
+    mocker.patch("boto3.client").assert_not_called()  # Ensure no boto3 clients were initialized
