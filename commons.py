@@ -258,7 +258,7 @@ def get_users(user_ids: list[str]) -> dict[str, User]:
         # batch_write_item has a limit of 25 items per request.
         # For the current use case (top 10 chatters), this limit is unlikely to be hit.
         # For larger batches, this would need to be chunked into multiple calls.
-        aws.boto3.batch_write_item(RequestItems={"users": cache_write_requests})
+        aws.dynamodb.batch_write_item(RequestItems={"users": cache_write_requests})
 
     return found_users_map
 
